@@ -367,20 +367,324 @@ function runIndicatorIntegrationTest(ohlcvData) {
     const lastPrice = closePrices[closePrices.length - 1];
     console.log(`Latest BB: Upper=${lastBB.upper.toFixed(5)}, Middle=${lastBB.middle.toFixed(5)}, Lower=${lastBB.lower.toFixed(5)}`);
     console.log(`Price vs Bands: ${lastPrice <= lastBB.lower ? 'At/Below Lower' : lastPrice >= lastBB.upper ? 'At/Above Upper' : 'Within Bands'}`);
-  }
-  console.groupEnd();
-  console.groupEnd();
-  
-  return { rsi, bb };
+}
+console.groupEnd();
+console.groupEnd();
+
+return { rsi, bb };
 }
 
 // ============================================================================
-// BACKTEST ENGINE (Phase 2 placeholder - mock implementation)
+// BACKTEST ENGINE (Phase 3 - Real Simulation Engine)
+// ============================================================================
+
+/**
+ * Run the actual backtest simulation using real indicator data
+ * @param {Object} config - Backtest configuration
+ * @param {Array<Object>} ohlcvData - Historical OHLCV data
+ * @param {Array<number|null>} rsiData - RSI values aligned with data
+ * @param {Array<Object|null>} bbData - Bollinger Bands aligned with data
+ * @returns {Object} Backtest results with trades, equity curve, and metrics
+ */
+function runBacktest(config, ohlcvData, rsiData, bbData) {
+  const { capital, stopLossPct, takeProfitPct } = config;
+  
+  // Trade state management
+  let currentCapital = capital;
+  let peakCapital = capital;
+  let maxDrawdown = 0;
+  const openTrades = [];
+  const closedTrades = [];
+  const equityCurve = [{ time: ohlcvData[0].time, equity: capital }];
+  
+  // Position sizing: fixed fractional (10% of capital per trade)
+  const positionSizeFraction = 0.1;
+  
+  console.group('%c AlphaForge Phase 3 - Backtest Execution ', 'background: #fbbf24; color: #0a0e14; font-weight: bold; padding: 4px 8px; border-radius: 4px;');
+  console.log(`Starting Capital: $${capital.toLocaleString()}`);
+  console.log(`Risk Parameters: SL=${stopLossPct}%, TP=${takeProfitPct}%`);
+  console.log(`Data Points: ${ohlcvData.length}`);
+  console.log('---');
+  
+  // Main execution loop - iterate through each bar sequentially
+  for (let i = 0; i < ohlcvData.length; i++) {
+    const bar = ohlcvData[i];
+    const rsi = rsiData[i];
+    const bb = bbData[i];
+    const currentPrice = bar.close;
+    
+    // Update equity curve for this bar (mark-to-market for open positions)
+    let unrealizedPnL = 0;
+    for (const trade of openTrades) {
+      if (trade.side === 'long') {
+        unrealizedPnL += (currentPrice - trade.entryPrice) * trade.positionSize;
+      } else {
+        unrealizedPnL += (trade.entryPrice - currentPrice) * trade.positionSize;
+      }
+    }
+    const currentEquity = currentCapital + unrealizedPnL;
+    equityCurve.push({ time: bar.time, equity: currentEquity });
+    
+    // Update peak and drawdown
+    peakCapital = Math.max(peakCapital, currentEquity);
+    const drawdown = peakCapital > 0 ? ((peakCapital - currentEquity) / peakCapital) * 100 : 0;
+    maxDrawdown = Math.max(maxDrawdown, drawdown);
+    
+    // --- EXIT LOGIC: Check open trades for SL/TP hits ---
+    // Iterate backwards to safely splice the array
+    for (let t = openTrades.length - 1; t >= 0; t--) {
+      const trade = openTrades[t];
+      let exitPrice = null;
+      let exitReason = '';
+      
+      if (trade.side === 'long') {
+        // Check Stop Loss
+        if (currentPrice <= trade.stopLossPrice) {
+          exitPrice = trade.stopLossPrice;
+          exitReason = 'STOP_LOSS';
+        }
+        // Check Take Profit
+        else if (currentPrice >= trade.takeProfitPrice) {
+          exitPrice = trade.takeProfitPrice;
+          exitReason = 'TAKE_PROFIT';
+        }
+      } else { // short
+        // Check Stop Loss
+        if (currentPrice >= trade.stopLossPrice) {
+          exitPrice = trade.stopLossPrice;
+          exitReason = 'STOP_LOSS';
+        }
+        // Check Take Profit
+        else if (currentPrice <= trade.takeProfitPrice) {
+          exitPrice = trade.takeProfitPrice;
+          exitReason = 'TAKE_PROFIT';
+        }
+      }
+      
+      // Close trade if exit condition met
+      if (exitPrice !== null) {
+        const pnl = trade.side === 'long' 
+          ? (exitPrice - trade.entryPrice) * trade.positionSize
+          : (trade.entryPrice - exitPrice) * trade.positionSize;
+        
+        const returnPct = (pnl / (trade.entryPrice * trade.positionSize)) * 100;
+        
+        currentCapital += pnl;
+        
+        const closedTrade = {
+          id: closedTrades.length + 1,
+          entryTime: trade.entryTime,
+          exitTime: bar.time,
+          side: trade.side,
+          entryPrice: trade.entryPrice,
+          exitPrice: exitPrice,
+          positionSize: trade.positionSize,
+          pnl: pnl,
+          returnPct: returnPct,
+          exitReason: exitReason,
+          barsHeld: i - trade.entryIndex
+        };
+        
+        closedTrades.push(closedTrade);
+        openTrades.splice(t, 1);
+        
+        console.log(`%c EXIT ${trade.side.toUpperCase()} #${closedTrade.id}`, 
+          exitReason === 'TAKE_PROFIT' ? 'color: #00d4aa; font-weight: bold;' : 'color: #f87171; font-weight: bold;',
+          `| Entry: ${trade.entryPrice.toFixed(5)} | Exit: ${exitPrice.toFixed(5)} | P&L: $${pnl.toFixed(2)} (${returnPct.toFixed(2)}%) | Reason: ${exitReason} | Bars Held: ${closedTrade.barsHeld}`
+        );
+      }
+    }
+    
+    // --- ENTRY LOGIC: Only enter if no open positions (no pyramiding) ---
+    if (openTrades.length === 0 && rsi !== null && bb !== null) {
+      const lowerBand = bb.lower;
+      const upperBand = bb.upper;
+      let entrySignal = null;
+      
+      // Long Entry: RSI < 30 AND Close <= Lower Bollinger Band
+      if (rsi < 30 && currentPrice <= lowerBand) {
+        entrySignal = 'long';
+      }
+      // Short Entry: RSI > 70 AND Close >= Upper Bollinger Band
+      else if (rsi > 70 && currentPrice >= upperBand) {
+        entrySignal = 'short';
+      }
+      
+      if (entrySignal) {
+        const entryPrice = currentPrice;
+        const positionValue = currentCapital * positionSizeFraction;
+        const positionSize = positionValue / entryPrice;
+        
+        // Calculate SL/TP prices
+        const slDistance = entryPrice * (stopLossPct / 100);
+        const tpDistance = entryPrice * (takeProfitPct / 100);
+        
+        let stopLossPrice, takeProfitPrice;
+        if (entrySignal === 'long') {
+          stopLossPrice = entryPrice - slDistance;
+          takeProfitPrice = entryPrice + tpDistance;
+        } else {
+          stopLossPrice = entryPrice + slDistance;
+          takeProfitPrice = entryPrice - tpDistance;
+        }
+        
+        const newTrade = {
+          entryIndex: i,
+          entryTime: bar.time,
+          side: entrySignal,
+          entryPrice: entryPrice,
+          positionSize: positionSize,
+          stopLossPrice: stopLossPrice,
+          takeProfitPrice: takeProfitPrice
+        };
+        
+        openTrades.push(newTrade);
+        
+        console.log(`%c ENTRY ${entrySignal.toUpperCase()} #${closedTrades.length + openTrades.length}`, 'color: #00b8d4; font-weight: bold;',
+          `| Time: ${bar.time} | Price: ${entryPrice.toFixed(5)} | RSI: ${rsi.toFixed(2)} | BB: [${lowerBand.toFixed(5)}, ${bb.middle.toFixed(5)}, ${upperBand.toFixed(5)}] | Size: ${positionSize.toFixed(4)} | SL: ${stopLossPrice.toFixed(5)} | TP: ${takeProfitPrice.toFixed(5)}`
+        );
+      }
+    }
+  }
+  
+  // Close any remaining open trades at the last bar's close price
+  const lastPrice = ohlcvData[ohlcvData.length - 1].close;
+  const lastTime = ohlcvData[ohlcvData.length - 1].time;
+  
+  for (const trade of openTrades) {
+    const pnl = trade.side === 'long' 
+      ? (lastPrice - trade.entryPrice) * trade.positionSize
+      : (trade.entryPrice - lastPrice) * trade.positionSize;
+    
+    const returnPct = (pnl / (trade.entryPrice * trade.positionSize)) * 100;
+    currentCapital += pnl;
+    
+    closedTrades.push({
+      id: closedTrades.length + 1,
+      entryTime: trade.entryTime,
+      exitTime: lastTime,
+      side: trade.side,
+      entryPrice: trade.entryPrice,
+      exitPrice: lastPrice,
+      positionSize: trade.positionSize,
+      pnl: pnl,
+      returnPct: returnPct,
+      exitReason: 'END_OF_DATA',
+      barsHeld: ohlcvData.length - 1 - trade.entryIndex
+    });
+    
+    console.log(`%c EXIT ${trade.side.toUpperCase()} #${closedTrades.length} (End of Data)`, 'color: #94a3b8; font-weight: bold;',
+      `| Entry: ${trade.entryPrice.toFixed(5)} | Exit: ${lastPrice.toFixed(5)} | P&L: $${pnl.toFixed(2)} (${returnPct.toFixed(2)}%)`
+    );
+  }
+  openTrades.length = 0;
+  
+  // --- FINAL METRICS CALCULATION ---
+  const netProfit = currentCapital - capital;
+  const netProfitPct = (netProfit / capital) * 100;
+  const totalTrades = closedTrades.length;
+  const wins = closedTrades.filter(t => t.pnl > 0).length;
+  const losses = closedTrades.filter(t => t.pnl <= 0).length;
+  const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+  
+  // Profit Factor
+  const grossProfit = closedTrades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0);
+  const grossLoss = Math.abs(closedTrades.filter(t => t.pnl <= 0).reduce((sum, t) => sum + t.pnl, 0));
+  const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999 : 0;
+  
+  // Sharpe Ratio (simplified, using bar-to-bar returns from equity curve)
+  const returns = [];
+  for (let i = 1; i < equityCurve.length; i++) {
+    const ret = (equityCurve[i].equity - equityCurve[i-1].equity) / equityCurve[i-1].equity;
+    returns.push(ret);
+  }
+  const avgReturn = returns.reduce((a, b) => a + b, 0) / (returns.length || 1);
+  const stdReturn = Math.sqrt(returns.reduce((a, b) => a + Math.pow(b - avgReturn, 2), 0) / (returns.length || 1));
+  const sharpeRatio = stdReturn > 0 ? (avgReturn / stdReturn) * Math.sqrt(252 * 24) : 0; // Annualized for 1H data
+  
+  // Average win/loss
+  const avgWin = wins > 0 ? closedTrades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0) / wins : 0;
+  const avgLoss = losses > 0 ? Math.abs(closedTrades.filter(t => t.pnl <= 0).reduce((sum, t) => sum + t.pnl, 0) / losses) : 0;
+  const riskRewardRatio = avgLoss > 0 ? avgWin / avgLoss : 0;
+  
+  // Max consecutive wins/losses
+  let maxConsecWins = 0, maxConsecLosses = 0, currentConsecWins = 0, currentConsecLosses = 0;
+  for (const trade of closedTrades) {
+    if (trade.pnl > 0) {
+      currentConsecWins++;
+      currentConsecLosses = 0;
+      maxConsecWins = Math.max(maxConsecWins, currentConsecWins);
+    } else {
+      currentConsecLosses++;
+      currentConsecWins = 0;
+      maxConsecLosses = Math.max(maxConsecLosses, currentConsecLosses);
+    }
+  }
+  
+  const results = {
+    config,
+    trades: closedTrades,
+    equityCurve: equityCurve,
+    metrics: {
+      netProfit,
+      netProfitPct,
+      totalTrades,
+      wins,
+      losses,
+      winRate,
+      maxDrawdown,
+      sharpeRatio,
+      profitFactor,
+      avgWin,
+      avgLoss,
+      riskRewardRatio,
+      maxConsecWins,
+      maxConsecLosses,
+      finalCapital: currentCapital
+    }
+  };
+  
+  // --- CONSOLE SUMMARY OUTPUT ---
+  console.group('%c BACKTEST SUMMARY ', 'background: #00d4aa; color: #0a0e14; font-weight: bold; padding: 4px 8px; border-radius: 4px;');
+  console.log(`Final Capital: $${currentCapital.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
+  console.log(`Net Profit: $${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${netProfitPct.toFixed(2)}%)`);
+  console.log(`Total Trades: ${totalTrades} | Wins: ${wins} | Losses: ${losses} | Win Rate: ${winRate.toFixed(1)}%`);
+  console.log(`Max Drawdown: ${maxDrawdown.toFixed(2)}%`);
+  console.log(`Sharpe Ratio: ${sharpeRatio.toFixed(2)}`);
+  console.log(`Profit Factor: ${profitFactor.toFixed(2)}`);
+  console.log(`Avg Win: $${avgWin.toFixed(2)} | Avg Loss: $${avgLoss.toFixed(2)} | R:R Ratio: ${riskRewardRatio.toFixed(2)}`);
+  console.log(`Max Consecutive Wins: ${maxConsecWins} | Max Consecutive Losses: ${maxConsecLosses}`);
+  console.groupEnd();
+  
+  // Trade table
+  console.group('%c CLOSED TRADES LOG ', 'background: #00b8d4; color: #0a0e14; font-weight: bold; padding: 4px 8px; border-radius: 4px;');
+  console.table(closedTrades.map(t => ({
+    '#': t.id,
+    'Type': t.side.toUpperCase(),
+    'Entry Time': t.entryTime,
+    'Exit Time': t.exitTime,
+    'Entry Price': t.entryPrice.toFixed(5),
+    'Exit Price': t.exitPrice.toFixed(5),
+    'P&L ($)': t.pnl.toFixed(2),
+    'Return (%)': t.returnPct.toFixed(2),
+    'Reason': t.exitReason,
+    'Bars Held': t.barsHeld
+  })));
+  console.groupEnd();
+  
+  console.groupEnd(); // End main backtest group
+  
+  return results;
+}
+
+// ============================================================================
+// BACKTEST ENGINE (Phase 1 placeholder - kept for reference)
 // ============================================================================
 
 /**
  * Mock backtest engine - Phase 1 placeholder
  * Returns mock results for UI demonstration
+ * @deprecated Use runBacktest() for actual simulation
  */
 function runMockBacktest(config, ohlcvData) {
   const { capital, stopLossPct, takeProfitPct } = config;
@@ -772,10 +1076,15 @@ async function handleBacktestRun(e) {
   showChartLoading(true);
   
   // Simulate async processing
-  await new Promise(resolve => setTimeout(resolve, 1500));
+  await new Promise(resolve => setTimeout(resolve, 500));
   
-  // Run mock backtest
-  backtestResults = runMockBacktest(currentConfig, mockData);
+  // Calculate indicators fresh
+  const closePrices = mockData.map(bar => bar.close);
+  const rsiData = calculateRSI(closePrices, 14);
+  const bbData = calculateBollingerBands(closePrices, 20, 2);
+  
+  // Run REAL backtest engine (Phase 3)
+  backtestResults = runBacktest(currentConfig, mockData, rsiData, bbData);
   
   // Update UI
   updateMetricsDisplay(backtestResults.metrics);
@@ -970,6 +1279,7 @@ document.addEventListener('DOMContentLoaded', init);
 window.AlphaForge = {
   generateMockOHLCV,
   runMockBacktest,
+  runBacktest,
   calculateRSI,
   calculateBollingerBands,
   calculateSMA,
