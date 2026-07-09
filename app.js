@@ -787,7 +787,23 @@ let equityChart = null;
 let currentChartType = 'equity';
 
 function initializeChart() {
-  const ctx = document.getElementById('equityChart').getContext('2d');
+  const canvas = document.getElementById('equityChart');
+  const ctx = canvas.getContext('2d');
+  
+  // Create gradients after canvas has size
+  function createGradients() {
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, 'rgba(0, 212, 170, 0.25)');
+    gradient.addColorStop(1, 'rgba(0, 212, 170, 0.02)');
+    
+    const ddGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    ddGradient.addColorStop(0, 'rgba(248, 113, 113, 0.25)');
+    ddGradient.addColorStop(1, 'rgba(248, 113, 113, 0.02)');
+    
+    return { gradient, ddGradient };
+  }
+  
+  const { gradient, ddGradient } = createGradients();
   
   Chart.defaults.color = '#94a3b8';
   Chart.defaults.font.family = "'JetBrains Mono', monospace";
@@ -801,24 +817,25 @@ function initializeChart() {
           label: 'Equity Curve',
           data: [],
           borderColor: '#00d4aa',
-          backgroundColor: 'rgba(0, 212, 170, 0.1)',
-          borderWidth: 2,
+          backgroundColor: gradient,
+          borderWidth: 2.5,
           fill: true,
-          tension: 0.3,
+          tension: 0.35,
           pointRadius: 0,
-          pointHoverRadius: 5,
+          pointHoverRadius: 6,
           pointBackgroundColor: '#00d4aa',
           pointBorderColor: '#0a0e14',
-          pointBorderWidth: 2
+          pointBorderWidth: 2,
+          pointHitRadius: 10
         },
         {
           label: 'Drawdown',
           data: [],
           borderColor: '#f87171',
-          backgroundColor: 'rgba(248, 113, 113, 0.1)',
+          backgroundColor: ddGradient,
           borderWidth: 1.5,
           fill: true,
-          tension: 0.3,
+          tension: 0.35,
           pointRadius: 0,
           hidden: true,
           yAxisID: 'y1'
@@ -853,7 +870,7 @@ function initializeChart() {
                 return `${label}: $${value.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
               }
               if (label === 'Drawdown') {
-                return `${label}: ${value.toFixed(2)}%`;
+                return `${label}: ${Math.abs(value).toFixed(2)}%`;
               }
               return `${label}: ${value}`;
             }
@@ -902,7 +919,7 @@ function initializeChart() {
           },
           ticks: {
             callback: function(value) {
-              return value.toFixed(1) + '%';
+              return Math.abs(value).toFixed(1) + '%';
             }
           }
         }
@@ -913,6 +930,17 @@ function initializeChart() {
       }
     }
   });
+  
+  // Recreate gradients on resize
+  const resizeObserver = new ResizeObserver(() => {
+    if (equityChart) {
+      const { gradient, ddGradient } = createGradients();
+      equityChart.data.datasets[0].backgroundColor = gradient;
+      equityChart.data.datasets[1].backgroundColor = ddGradient;
+      equityChart.update('none');
+    }
+  });
+  resizeObserver.observe(canvas);
 }
 
 function updateChart(data, chartType = 'equity') {
@@ -920,6 +948,18 @@ function updateChart(data, chartType = 'equity') {
   
   currentChartType = chartType;
   const { equityCurve, metrics } = data;
+  
+  // Recreate gradients (canvas size may have changed)
+  const ctx = equityChart.ctx;
+  const chartHeight = ctx.canvas.height;
+  
+  const equityGradient = ctx.createLinearGradient(0, 0, 0, chartHeight);
+  equityGradient.addColorStop(0, 'rgba(0, 212, 170, 0.25)');
+  equityGradient.addColorStop(1, 'rgba(0, 212, 170, 0.02)');
+  
+  const ddGradient = ctx.createLinearGradient(0, 0, 0, chartHeight);
+  ddGradient.addColorStop(0, 'rgba(248, 113, 113, 0.25)');
+  ddGradient.addColorStop(1, 'rgba(248, 113, 113, 0.02)');
   
   // Prepare equity data
   const equityData = equityCurve.map(point => ({
@@ -932,22 +972,18 @@ function updateChart(data, chartType = 'equity') {
   const drawdownData = equityCurve.map(point => {
     peak = Math.max(peak, point.equity);
     const dd = peak > 0 ? ((peak - point.equity) / peak) * 100 : 0;
-    return { x: new Date(point.time.replace(' ', 'T')), y: -dd }; // Negative for inverted display
+    return { x: new Date(point.time.replace(' ', 'T')), y: -dd };
   });
   
   equityChart.data.datasets[0].data = equityData;
+  equityChart.data.datasets[0].backgroundColor = equityGradient;
   equityChart.data.datasets[1].data = drawdownData;
+  equityChart.data.datasets[1].backgroundColor = ddGradient;
   
   // Toggle visibility based on chart type
   equityChart.data.datasets[0].hidden = chartType === 'drawdown';
   equityChart.data.datasets[1].hidden = chartType !== 'drawdown';
   equityChart.options.scales.y1.display = chartType === 'drawdown';
-  
-  // Update colors for drawdown
-  if (chartType === 'drawdown') {
-    equityChart.data.datasets[1].borderColor = '#f87171';
-    equityChart.data.datasets[1].backgroundColor = 'rgba(248, 113, 113, 0.15)';
-  }
   
   equityChart.update('active');
   
@@ -1177,26 +1213,22 @@ function updateTradeLog(trades) {
   const tbody = document.getElementById('tradeLogBody');
   
   if (!trades || trades.length === 0) {
-    tbody.innerHTML = '<tr class="hover:bg-neutral-900/50"><td colspan="7" class="py-8 text-center text-neutral-600">Run a backtest to see trade history</td></tr>';
+    tbody.innerHTML = '<tr class="hover:bg-neutral-900/50"><td colspan="5" class="py-8 text-center text-neutral-600">Run a backtest to see trade history</td></tr>';
     return;
   }
   
-  tbody.innerHTML = trades.map((trade, i) => `
+  tbody.innerHTML = trades.map((trade) => `
     <tr class="hover:bg-neutral-900/50 border-t border-neutral-800">
       <td class="py-3 px-2 font-mono text-neutral-500">${trade.id}</td>
-      <td class="py-3 px-2 font-mono text-xs">${trade.time}</td>
       <td class="py-3 px-2">
         <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${trade.side === 'long' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}">
           ${trade.side === 'long' ? '↑ Long' : '↓ Short'}
         </span>
       </td>
-      <td class="py-3 px-2 font-mono text-sm">${trade.entry.toFixed(trade.entry > 100 ? 2 : 5)}</td>
-      <td class="py-3 px-2 font-mono text-sm">${trade.exit.toFixed(trade.exit > 100 ? 2 : 5)}</td>
+      <td class="py-3 px-2 font-mono text-sm">${trade.entryPrice.toFixed(trade.entryPrice > 100 ? 2 : 5)}</td>
+      <td class="py-3 px-2 font-mono text-sm">${trade.exitPrice.toFixed(trade.exitPrice > 100 ? 2 : 5)}</td>
       <td class="py-3 px-2 font-mono text-sm ${trade.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}">
         ${trade.pnl >= 0 ? '+' : ''}$${trade.pnl.toFixed(2)}
-      </td>
-      <td class="py-3 px-2 font-mono text-sm ${trade.returnPct >= 0 ? 'text-emerald-400' : 'text-red-400'}">
-        ${trade.returnPct >= 0 ? '+' : ''}${trade.returnPct.toFixed(2)}%
       </td>
     </tr>
   `).join('');
