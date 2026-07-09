@@ -167,6 +167,214 @@ function formatDateForTimeframe(date, timeframe) {
 }
 
 // ============================================================================
+// TECHNICAL INDICATORS (Phase 2)
+// ============================================================================
+
+/**
+ * Extract close prices from OHLCV data
+ * @param {Array<Object>} ohlcvData - Array of OHLCV objects
+ * @returns {Array<number>} Array of close prices
+ */
+function extractClosePrices(ohlcvData) {
+  return ohlcvData.map(bar => bar.close);
+}
+
+/**
+ * Calculate Simple Moving Average (SMA)
+ * @param {Array<number>} values - Array of numerical values
+ * @param {number} period - SMA period
+ * @returns {Array<number|null>} Array of SMA values (null for insufficient data)
+ */
+function calculateSMA(values, period) {
+  const result = new Array(values.length).fill(null);
+  if (values.length < period) return result;
+  
+  let sum = 0;
+  for (let i = 0; i < period; i++) {
+    sum += values[i];
+  }
+  result[period - 1] = sum / period;
+  
+  for (let i = period; i < values.length; i++) {
+    sum = sum - values[i - period] + values[i];
+    result[i] = sum / period;
+  }
+  
+  return result;
+}
+
+/**
+ * Calculate Standard Deviation
+ * @param {Array<number>} values - Array of numerical values
+ * @param {number} period - Lookback period
+ * @returns {Array<number|null>} Array of standard deviation values
+ */
+function calculateStdDev(values, period) {
+  const result = new Array(values.length).fill(null);
+  if (values.length < period) return result;
+  
+  for (let i = period - 1; i < values.length; i++) {
+    const slice = values.slice(i - period + 1, i + 1);
+    const mean = slice.reduce((a, b) => a + b, 0) / period;
+    const variance = slice.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / period;
+    result[i] = Math.sqrt(variance);
+  }
+  
+  return result;
+}
+
+/**
+ * Calculate RSI (Relative Strength Index) using Wilder's Smoothing Method
+ * @param {Array<number>} closePrices - Array of close prices
+ * @param {number} period - RSI period (default: 14)
+ * @returns {Array<number|null>} Array of RSI values aligned with input (null for insufficient data)
+ */
+function calculateRSI(closePrices, period = 14) {
+  const result = new Array(closePrices.length).fill(null);
+  
+  if (closePrices.length < period + 1) {
+    console.warn(`RSI: Insufficient data. Need at least ${period + 1} prices, got ${closePrices.length}`);
+    return result;
+  }
+  
+  // Calculate price changes
+  const changes = new Array(closePrices.length).fill(0);
+  for (let i = 1; i < closePrices.length; i++) {
+    changes[i] = closePrices[i] - closePrices[i - 1];
+  }
+  
+  // Separate gains and losses
+  const gains = changes.map(change => change > 0 ? change : 0);
+  const losses = changes.map(change => change < 0 ? Math.abs(change) : 0);
+  
+  // Initial average gain/loss (simple average for first period)
+  let avgGain = gains.slice(1, period + 1).reduce((a, b) => a + b, 0) / period;
+  let avgLoss = losses.slice(1, period + 1).reduce((a, b) => a + b, 0) / period;
+  
+  // First RSI value at index = period
+  if (avgLoss === 0) {
+    result[period] = 100;
+  } else {
+    const rs = avgGain / avgLoss;
+    result[period] = 100 - (100 / (1 + rs));
+  }
+  
+  // Wilder's Smoothing for subsequent values
+  // avgGain = (prevAvgGain * (period - 1) + currentGain) / period
+  // avgLoss = (prevAvgLoss * (period - 1) + currentLoss) / period
+  for (let i = period + 1; i < closePrices.length; i++) {
+    avgGain = (avgGain * (period - 1) + gains[i]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+    
+    if (avgLoss === 0) {
+      result[i] = 100;
+    } else {
+      const rs = avgGain / avgLoss;
+      result[i] = 100 - (100 / (1 + rs));
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Calculate Bollinger Bands
+ * @param {Array<number>} closePrices - Array of close prices
+ * @param {number} period - SMA period (default: 20)
+ * @param {number} multiplier - Standard deviation multiplier (default: 2)
+ * @returns {Array<Object|null>} Array of { upper, middle, lower } bands
+ */
+function calculateBollingerBands(closePrices, period = 20, multiplier = 2) {
+  const result = new Array(closePrices.length).fill(null);
+  
+  if (closePrices.length < period) {
+    console.warn(`Bollinger Bands: Insufficient data. Need at least ${period} prices, got ${closePrices.length}`);
+    return result;
+  }
+  
+  const sma = calculateSMA(closePrices, period);
+  const stdDev = calculateStdDev(closePrices, period);
+  
+  for (let i = period - 1; i < closePrices.length; i++) {
+    const middle = sma[i];
+    const bandWidth = stdDev[i] * multiplier;
+    
+    result[i] = {
+      upper: middle + bandWidth,
+      middle: middle,
+      lower: middle - bandWidth
+    };
+  }
+  
+  return result;
+}
+
+/**
+ * Run integration test on indicators
+ * @param {Array<Object>} ohlcvData - Mock OHLCV data
+ */
+function runIndicatorIntegrationTest(ohlcvData) {
+  console.group('%c AlphaForge Phase 2 - Indicator Integration Test ', 'background: #00d4aa; color: #0a0e14; font-weight: bold; padding: 4px 8px; border-radius: 4px;');
+  
+  const closePrices = extractClosePrices(ohlcvData);
+  console.log(`Data points: ${closePrices.length}`);
+  console.log(`Price range: ${Math.min(...closePrices).toFixed(5)} - ${Math.max(...closePrices).toFixed(5)}`);
+  
+  // Test RSI
+  console.group('%c RSI (14-period, Wilder\'s Smoothing)', 'color: #00b8d4; font-weight: 600;');
+  const rsi = calculateRSI(closePrices, 14);
+  const validRSI = rsi.filter(v => v !== null);
+  console.log(`Calculated values: ${validRSI.length} / ${closePrices.length}`);
+  console.log(`RSI range: ${Math.min(...validRSI).toFixed(2)} - ${Math.max(...validRSI).toFixed(2)}`);
+  
+  console.log('\nLast 5 RSI values:');
+  for (let i = Math.max(0, closePrices.length - 5); i < closePrices.length; i++) {
+    const time = ohlcvData[i].time;
+    const price = closePrices[i].toFixed(5);
+    const rsiVal = rsi[i] !== null ? rsi[i].toFixed(2) : 'N/A';
+    const signal = rsi[i] !== null ? (rsi[i] < 30 ? '🟢 OVERSOLD' : rsi[i] > 70 ? '🔴 OVERBOUGHT' : '⚪ NEUTRAL') : '';
+    console.log(`  ${time} | Close: ${price} | RSI: ${rsiVal} ${signal}`);
+  }
+  console.groupEnd();
+  
+  // Test Bollinger Bands
+  console.group('%c Bollinger Bands (20-period, 2σ)', 'color: #fbbf24; font-weight: 600;');
+  const bb = calculateBollingerBands(closePrices, 20, 2);
+  const validBB = bb.filter(v => v !== null);
+  console.log(`Calculated values: ${validBB.length} / ${closePrices.length}`);
+  
+  console.log('\nLast 5 Bollinger Band values:');
+  for (let i = Math.max(0, closePrices.length - 5); i < closePrices.length; i++) {
+    const time = ohlcvData[i].time;
+    const price = closePrices[i].toFixed(5);
+    if (bb[i]) {
+      const { upper, middle, lower } = bb[i];
+      const position = ((price - lower) / (upper - lower) * 100).toFixed(1);
+      const signal = price <= lower ? '🟢 AT LOWER BAND' : price >= upper ? '🔴 AT UPPER BAND' : '⚪ MIDDLE';
+      console.log(`  ${time} | Close: ${price} | BB: [${lower.toFixed(5)}, ${middle.toFixed(5)}, ${upper.toFixed(5)}] | %B: ${position}% ${signal}`);
+    } else {
+      console.log(`  ${time} | Close: ${price} | BB: N/A (insufficient data)`);
+    }
+  }
+  console.groupEnd();
+  
+  // Summary
+  console.group('%c Summary', 'color: #00d4aa; font-weight: 600;');
+  const lastRSI = rsi[rsi.length - 1];
+  const lastBB = bb[bb.length - 1];
+  console.log(`Latest RSI (14): ${lastRSI !== null ? lastRSI.toFixed(2) : 'N/A'} ${lastRSI !== null ? (lastRSI < 30 ? '(Oversold)' : lastRSI > 70 ? '(Overbought)' : '(Neutral)') : ''}`);
+  if (lastBB) {
+    const lastPrice = closePrices[closePrices.length - 1];
+    console.log(`Latest BB: Upper=${lastBB.upper.toFixed(5)}, Middle=${lastBB.middle.toFixed(5)}, Lower=${lastBB.lower.toFixed(5)}`);
+    console.log(`Price vs Bands: ${lastPrice <= lastBB.lower ? 'At/Below Lower' : lastPrice >= lastBB.upper ? 'At/Above Upper' : 'Within Bands'}`);
+  }
+  console.groupEnd();
+  console.groupEnd();
+  
+  return { rsi, bb };
+}
+
+// ============================================================================
 // BACKTEST ENGINE (Phase 2 placeholder - mock implementation)
 // ============================================================================
 
@@ -477,6 +685,9 @@ function init() {
   // Generate initial mock data
   mockData = generateMockOHLCV({ count: 100, symbol: currentConfig.asset });
   
+  // Run Phase 2 Indicator Integration Test
+  runIndicatorIntegrationTest(mockData);
+  
   // Initialize chart
   initializeChart();
   
@@ -487,7 +698,7 @@ function init() {
   updateMetricsDisplay(null);
   updateTradeLog([]);
   
-  showToast('AlphaForge initialized. Mock data generated (100 bars).', 'info');
+  showToast('AlphaForge initialized. Mock data generated (100 bars). Indicators tested.', 'success');
 }
 
 function bindEvents() {
@@ -498,7 +709,8 @@ function bindEvents() {
   document.getElementById('assetSelect').addEventListener('change', (e) => {
     currentConfig.asset = e.target.value;
     mockData = generateMockOHLCV({ count: 100, symbol: currentConfig.asset });
-    showToast(`Mock data regenerated for ${currentConfig.asset}`, 'info');
+    runIndicatorIntegrationTest(mockData);
+    showToast(`Mock data regenerated for ${currentConfig.asset}. Indicators recalculated.`, 'info');
   });
   
   // Strategy change
@@ -758,5 +970,11 @@ document.addEventListener('DOMContentLoaded', init);
 window.AlphaForge = {
   generateMockOHLCV,
   runMockBacktest,
+  calculateRSI,
+  calculateBollingerBands,
+  calculateSMA,
+  calculateStdDev,
+  extractClosePrices,
+  runIndicatorIntegrationTest,
   init
 };
