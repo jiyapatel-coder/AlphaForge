@@ -54,7 +54,8 @@ button:active{background:var(--bg-active)}
 .header__change.pos{color:var(--accent-long)}
 .header__change.neg{color:var(--accent-short)}
 .header__status{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text-muted);margin-left:auto}
-.header__status-dot{width:6px;height:6px;border-radius:0;background:var(--accent-long)}
+.header__status-dot{width:6px;height:6px;border-radius:0;background:var(--accent-long);transition:background 0.3s}
+.header__status-dot.completed{background:var(--text-muted)}
 .header__clock{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);min-width:140px;text-align:right}
 
 .main-grid{display:grid;grid-template-columns:var(--tape-w) 1fr var(--panel-w);min-height:0;height:100%}
@@ -125,6 +126,9 @@ button:active{background:var(--bg-active)}
 .btn-run:disabled{opacity:0.4;cursor:not-allowed}
 .btn-reset{background:transparent;color:var(--text-muted);border:1px solid var(--border);padding:0 12px}
 .btn-reset:hover{color:var(--text-primary);border-color:var(--text-muted)}
+.btn-ff{background:linear-gradient(135deg,var(--accent-info) 0%,#1a6bff 100%);color:#000;border:1px solid var(--accent-info);font-weight:600;padding:0 8px;height:28px;letter-spacing:0.3px;font-size:8px;white-space:nowrap}
+.btn-ff:hover{background:linear-gradient(135deg,#4a8aff 0%,#2979FF 100%)}
+.btn-ff:disabled{opacity:0.4;cursor:not-allowed}
 .actions-bar{display:flex;gap:8px;padding:6px 10px;align-items:center;border-bottom:1px solid var(--border)}
 .actions-bar .bar-info{margin-left:auto;font-family:var(--font-mono);font-size:9px;color:var(--text-muted)}
 
@@ -151,7 +155,7 @@ button:active{background:var(--bg-active)}
     <span class="header__change" id="headerChange">+0.02%</span>
     <div class="header__status">
       <span class="header__status-dot"></span>
-      <span id="statusLabel">LIVE</span>
+      <span id="statusLabel">READY</span>
     </div>
     <span class="header__clock" id="headerClock">--:--:--</span>
   </header>
@@ -228,6 +232,7 @@ button:active{background:var(--bg-active)}
       <div class="right-panel__section flex-shrink-0">
         <div class="actions-bar">
           <button class="btn-run" id="btnRun">Run</button>
+          <button class="btn-ff" id="btnFF">⏭️ FAST FORWARD</button>
           <button class="btn-reset" id="btnReset">Reset</button>
           <span class="bar-info" id="barInfo">0 bars</span>
         </div>
@@ -530,7 +535,8 @@ function startLiveEngine() {
   for(const t of S.trades) st.trades.push(t);
 
   document.getElementById('btnRun').disabled=true;
-  document.getElementById('statusLabel').textContent='LIVE';
+  document.getElementById('btnFF').disabled=true;
+  setStatus('live');
 
   S.ticker=setInterval(()=>{
     const prev=S.bars[S.bars.length-1], tick=genTick(prev);
@@ -576,6 +582,28 @@ function stopLiveEngine() {
   S.running=false;
   if(S.ticker){clearInterval(S.ticker);S.ticker=null;}
   document.getElementById('btnRun').disabled=false;
+}
+
+function setStatus(mode) {
+  const dot=document.querySelector('.header__status-dot'), label=document.getElementById('statusLabel');
+  dot.classList.toggle('completed',mode==='completed');
+  label.textContent=mode==='live'?'LIVE':mode==='completed'?'COMPLETED':'READY';
+}
+
+function handleFastForward() {
+  stopLiveEngine();
+  S.bars=genData(1000); S.rsi=[]; S.bb=[]; S.trades=[]; S.capital=10000; S.equity=[]; S.peak=10000; S.position=null;
+  updateChartData(S.bars);
+  runBatchBacktest();
+  updateMetrics();
+  updateTradeLog();
+  updatePositionBar();
+  updateHeader(S.bars[S.bars.length-1]);
+  document.getElementById('barInfo').textContent=S.bars.length+' bars';
+  document.getElementById('footerInfo').textContent='BARS: '+S.bars.length+' | CAPITAL: $'+S.capital.toFixed(2)+' | TRADES: '+S.trades.length;
+  setStatus('completed');
+  document.getElementById('btnRun').disabled=true;
+  document.getElementById('btnFF').disabled=true;
 }
 
 // ============================================================================
@@ -684,6 +712,9 @@ function resetAll() {
   document.getElementById('footerInfo').textContent='BARS: '+S.bars.length+' | CAPITAL: $10,000.00';
   document.getElementById('positionBar').className='position-bar';
   document.getElementById('positionBar').innerHTML='<span class="pos-label">No Position</span><span class="pos-pnl"></span>';
+  document.getElementById('btnRun').disabled=false;
+  document.getElementById('btnFF').disabled=false;
+  setStatus('idle');
   updateMetrics();
 }
 
@@ -713,6 +744,8 @@ function init() {
     }
   });
   document.getElementById('btnReset').addEventListener('click',resetAll);
+  document.getElementById('btnFF').addEventListener('click',handleFastForward);
+  setStatus('idle');
 }
 
 document.addEventListener('DOMContentLoaded', init);
