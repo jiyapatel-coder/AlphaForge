@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AlphaForge // Quantitative Backtest Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0a0e14;
+      --bg-secondary: #11171f;
+      --bg-tertiary: #1a222e;
+      --fg-primary: #e8ebf0;
+      --fg-secondary: #94a3b8;
+      --fg-muted: #5a6a85;
+      --accent-primary: #00d4aa;
+      --accent-secondary: #00b8d4;
+      --accent-danger: #f87171;
+      --accent-warning: #fbbf24;
+      --border-primary: #1e2a3a;
+      --border-secondary: #2d3a4f;
+      --card-bg: #141c28;
+      --input-bg: #0d131b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: var(--bg-primary);
+      color: var(--fg-primary);
+      min-height: 100vh;
+    }
+
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-primary); }
+    ::-webkit-scrollbar-thumb { background: var(--border-secondary); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); }
+
+    /* Background grid pattern */
+    .bg-grid {
+      background-image: 
+        linear-gradient(rgba(0, 212, 170, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 170, 0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* Glow effects */
+    .glow-accent { box-shadow: 0 0 20px rgba(0, 212, 170, 0.15), 0 0 40px rgba(0, 212, 170, 0.05); }
+    .glow-accent:hover { box-shadow: 0 0 30px rgba(0, 212, 170, 0.25), 0 0 60px rgba(0, 212, 170, 0.1); }
+
+    /* Input styles */
+    .input-field {
+      background: var(--input-bg);
+      border: 1px solid var(--border-primary);
+      color: var(--fg-primary);
+      transition: all 0.2s ease;
+    }
+    .input-field:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.15);
+      outline: none;
+    }
+    .input-field::placeholder { color: var(--fg-muted); }
+
+    /* Select styles */
+    select.input-field {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+      background-position: right 12px center;
+      background-repeat: no-repeat;
+      background-size: 16px;
+      padding-right: 40px;
+    }
+
+    /* Button styles */
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-primary) 0%, #00b894 100%);
+      color: var(--bg-primary);
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 25px rgba(0, 212, 170, 0.3);
+    }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-secondary);
+      color: var(--fg-secondary);
+      transition: all 0.2s ease;
+    }
+    .btn-secondary:hover {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+      background: var(--bg-secondary);
+    }
+
+    /* Card styles */
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-primary);
+      transition: all 0.3s ease;
+    }
+    .metric-card:hover {
+      border-color: var(--border-secondary);
+      transform: translateY(-2px);
+    }
+
+    /* Loading skeleton */
+    .skeleton {
+      background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 50%, var(--bg-tertiary) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* Chart container */
+    .chart-wrapper {
+      position: relative;
+      height: 100%;
+      min-height: 400px;
+    }
+
+    /* Header */
+    .header-gradient {
+      background: linear-gradient(180deg, rgba(17, 23, 31, 0.95) 0%, rgba(10, 14, 20, 0.9) 100%);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-primary);
+    }
+
+    /* Section dividers */
+    .section-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-primary), transparent);
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 1024px) {
+      .chart-wrapper { min-height: 350px; }
+    }
+    @media (max-width: 768px) {
+      .chart-wrapper { min-height: 300px; }
+      .metric-card { padding: 1rem; }
+    }
+
+    /* Focus visible for accessibility */
+    *:focus-visible {
+      outline: 2px solid var(--accent-primary);
+      outline-offset: 2px;
+    }
+
+    /* Tooltip for chart */
+    .chart-tooltip {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-secondary);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="bg-grid">
+  <!-- Header -->
+  <header class="header-gradient sticky top-0 z-50">
+    <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
+            <svg class="w-5 h-5 text-neutral-950" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-white">AlphaForge</h1>
+            <p class="text-xs text-neutral-500 font-mono">Quantitative Backtest Engine</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="hidden sm:block text-xs text-neutral-500 font-mono bg-neutral-900/50 px-3 py-1 rounded border border-neutral-800">
+            v1.0.0-alpha
+          </span>
+          <button id="themeToggle" class="btn-secondary p-2 rounded-lg" aria-label="Toggle theme">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      
+      <!-- Left Panel: Parameter Controls -->
+      <aside class="lg:col-span-1 space-y-6">
+        
+        <!-- Asset & Strategy Selection -->
+        <section class="metric-card rounded-xl p-5 glow-accent">
+          <header class="flex items-center justify-between mb-5">
+            <h2 class="text-sm font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              Configuration
+            </h2>
+            <button id="resetConfig" class="btn-secondary text-xs px-3 py-1.5 rounded-lg" title="Reset to defaults">
+              <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              Reset
+            </button>
+          </header>
+          
+          <form id="configForm" class="space-y-4">
+            <!-- Asset Selection -->
+            <div>
+              <label for="assetSelect" class="block text-xs font-medium text-neutral-400 mb-1.5">Trading Pair</label>
+              <select id="assetSelect" class="input-field w-full px-4 py-3 rounded-lg text-sm font-mono" required>
+                <option value="EURUSD">EUR/USD — Euro / US Dollar</option>
+                <option value="GBPUSD">GBP/USD — British Pound / US Dollar</option>
+                <option value="BTCUSD">BTC/USD — Bitcoin / US Dollar</option>
+              </select>
+              <p class="text-xs text-neutral-600 mt-1">Major forex pairs & crypto</p>
+            </div>
+
+            <!-- Strategy Selection -->
+            <div>
+              <label for="strategySelect" class="block text-xs font-medium text-neutral-400 mb-1.5">Strategy</label>
+              <select id="strategySelect" class="input-field w-full px-4 py-3 rounded-lg text-sm" required>
+                <option value="rsi_bb">RSI + Bollinger Bands Mean Reversion</option>
+                <option value="macd_trend" disabled class="text-neutral-600">MACD Trend Following (Coming Soon)</option>
+                <option value="ema_cross" disabled class="text-neutral-600">EMA Crossover (Coming Soon)</option>
+              </select>
+              <p class="text-xs text-neutral-600 mt-1">Mean reversion on 1H timeframe</p>
+            </div>
+
+            <!-- Starting Capital -->
+            <div>
+              <label for="capitalInput" class="block text-xs font-medium text-neutral-400 mb-1.5">Starting Capital (USD)</label>
+              <div class="relative">
+                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500 font-mono text-sm">$</span>
+                <input 
+                  type="number" 
+                  id="capitalInput" 
+                  class="input-field w-full pl-10 pr-4 py-3 rounded-lg text-sm font-mono text-right" 
+                  value="10000" 
+                  min="1000" 
+                  max="10000000" 
+                  step="1000"
+                  required
+                >
+              </div>
+              <p class="text-xs text-neutral-600 mt-1">Minimum $1,000</p>
+            </div>
+
+            <div class="section-divider my-2"></div>
+
+            <!-- Risk Management -->
+            <h3 class="text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-3">Risk Management</h3>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label for="stopLossInput" class="block text-xs font-medium text-neutral-400 mb-1.5">Stop Loss %</label>
+                <div class="relative">
+                  <input 
+                    type="number" 
+                    id="stopLossInput" 
+                    class="input-field w-full pr-10 py-3 rounded-lg text-sm font-mono text-right" 
+                    value="2.0" 
+                    min="0.1" 
+                    max="20" 
+                    step="0.1"
+                    required
+                  >
+                  <span class="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-500 font-mono text-sm">%</span>
+                </div>
+              </div>
+              <div>
+                <label for="takeProfitInput" class="block text-xs font-medium text-neutral-400 mb-1.5">Take Profit %</label>
+                <div class="relative">
+                  <input 
+                    type="number" 
+                    id="takeProfitInput" 
+                    class="input-field w-full pr-10 py-3 rounded-lg text-sm font-mono text-right" 
+                    value="4.0" 
+                    min="0.1" 
+                    max="50" 
+                    step="0.1"
+                    required
+                  >
+                  <span class="absolute right-4 top-1/2 -translate-y-1/2 text-neutral-500 font-mono text-sm">%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Run Button -->
+            <button 
+              type="submit" 
+              id="runBacktest"
+              class="btn-primary w-full py-3.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 mt-2"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              Run Backtest
+            </button>
+          </form>
+        </section>
+
+        <!-- Strategy Info Panel -->
+        <section class="metric-card rounded-xl p-5">
+          <h3 class="text-sm font-semibold text-neutral-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            Strategy Logic
+          </h3>
+          <div class="space-y-3 text-sm text-neutral-500">
+            <div class="flex items-start gap-3 p-3 bg-neutral-900/30 rounded-lg border border-neutral-800">
+              <span class="w-6 h-6 flex-shrink-0 flex items-center justify-center bg-emerald-400/10 text-emerald-400 rounded text-xs font-mono font-bold">1</span>
+              <div>
+                <p class="font-medium text-neutral-300">RSI Signal</p>
+                <p>Buy when RSI(14) < 30 (oversold), Sell when RSI(14) > 70 (overbought)</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-3 bg-neutral-900/30 rounded-lg border border-neutral-800">
+              <span class="w-6 h-6 flex-shrink-0 flex items-center justify-center bg-emerald-400/10 text-emerald-400 rounded text-xs font-mono font-bold">2</span>
+              <div>
+                <p class="font-medium text-neutral-300">Bollinger Confirmation</p>
+                <p>Price must touch lower/upper band (20, 2) for entry confirmation</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 p-3 bg-neutral-900/30 rounded-lg border border-neutral-800">
+              <span class="w-6 h-6 flex-shrink-0 flex items-center justify-center bg-emerald-400/10 text-emerald-400 rounded text-xs font-mono font-bold">3</span>
+              <div>
+                <p class="font-medium text-neutral-300">Risk Controls</p>
+                <p>Fixed SL/TP percentages applied per trade. No position sizing yet.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </aside>
+
+      <!-- Right Panel: Analytics & Chart -->
+      <div class="lg:col-span-3 space-y-6">
+        
+        <!-- Metrics Grid -->
+        <section aria-label="Performance Metrics">
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4" id="metricsGrid">
+            <!-- Net Profit -->
+            <article class="metric-card rounded-xl p-5 min-h-[120px] flex flex-col">
+              <header class="flex items-center justify-between mb-3">
+                <span class="text-xs font-medium text-neutral-500 uppercase tracking-wider">Net Profit</span>
+                <div class="w-2 h-2 rounded-full bg-emerald-400/30" aria-hidden="true"></div>
+              </header>
+              <div class="flex-1 flex flex-col justify-center">
+                <div id="metricNetProfit" class="text-3xl lg:text-4xl font-bold font-mono text-neutral-300 skeleton h-10 w-3/4 mx-auto rounded" aria-live="polite"></div>
+                <p id="netProfitPct" class="text-xs text-neutral-500 mt-1 text-center font-mono"></p>
+              </div>
+            </article>
+
+            <!-- Win Rate -->
+            <article class="metric-card rounded-xl p-5 min-h-[120px] flex flex-col">
+              <header class="flex items-center justify-between mb-3">
+                <span class="text-xs font-medium text-neutral-500 uppercase tracking-wider">Win Rate</span>
+                <div class="w-2 h-2 rounded-full bg-blue-400/30" aria-hidden="true"></div>
+              </header>
+              <div class="flex-1 flex flex-col justify-center">
+                <div id="metricWinRate" class="text-3xl lg:text-4xl font-bold font-mono text-neutral-300 skeleton h-10 w-3/4 mx-auto rounded" aria-live="polite"></div>
+                <p class="text-xs text-neutral-500 mt-1 text-center font-mono">— / — trades</p>
+              </div>
+            </article>
+
+            <!-- Max Drawdown -->
+            <article class="metric-card rounded-xl p-5 min-h-[120px] flex flex-col">
+              <header class="flex items-center justify-between mb-3">
+                <span class="text-xs font-medium text-neutral-500 uppercase tracking-wider">Max Drawdown</span>
+                <div class="w-2 h-2 rounded-full bg-red-400/30" aria-hidden="true"></div>
+              </header>
+              <div class="flex-1 flex flex-col justify-center">
+                <div id="metricMaxDD" class="text-3xl lg:text-4xl font-bold font-mono text-neutral-300 skeleton h-10 w-3/4 mx-auto rounded" aria-live="polite"></div>
+                <p class="text-xs text-neutral-500 mt-1 text-center font-mono">Peak to trough</p>
+              </div>
+            </article>
+
+            <!-- Sharpe Ratio -->
+            <article class="metric-card rounded-xl p-5 min-h-[120px] flex flex-col">
+              <header class="flex items-center justify-between mb-3">
+                <span class="text-xs font-medium text-neutral-500 uppercase tracking-wider">Sharpe Ratio</span>
+                <div class="w-2 h-2 rounded-full bg-amber-400/30" aria-hidden="true"></div>
+              </header>
+              <div class="flex-1 flex flex-col justify-center">
+                <div id="metricSharpe" class="text-3xl lg:text-4xl font-bold font-mono text-neutral-300 skeleton h-10 w-3/4 mx-auto rounded" aria-live="polite"></div>
+                <p class="text-xs text-neutral-500 mt-1 text-center font-mono">Risk-adjusted return</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- Chart Area -->
+        <section class="metric-card rounded-xl p-5 overflow-hidden" aria-label="Equity Curve Chart">
+          <header class="flex items-center justify-between mb-5">
+            <div class="flex items-center gap-3">
+              <h2 class="text-sm font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                Equity Curve
+              </h2>
+              <span id="chartTimeframe" class="text-xs text-neutral-500 bg-neutral-900/50 px-2 py-0.5 rounded font-mono">1H Timeframe</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <select id="chartType" class="input-field px-3 py-1.5 text-xs rounded-lg min-w-[140px]">
+                <option value="equity">Equity Curve</option>
+                <option value="drawdown">Drawdown</option>
+                <option value="returns">Returns Distribution</option>
+              </select>
+              <button id="exportChart" class="btn-secondary p-2 rounded-lg" title="Export chart as PNG" aria-label="Export chart">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                </svg>
+              </button>
+            </div>
+          </header>
+          
+          <div class="chart-wrapper relative">
+            <canvas id="equityChart" aria-label="Equity curve chart showing portfolio value over time"></canvas>
+            
+            <!-- Empty state overlay -->
+            <div id="chartEmptyState" class="absolute inset-0 flex flex-col items-center justify-center text-neutral-600 bg-neutral-950/50 rounded-lg">
+              <svg class="w-16 h-16 mb-4 text-neutral-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+              </svg>
+              <p class="text-lg font-medium text-neutral-400">No backtest data yet</p>
+              <p class="text-sm text-neutral-600 mt-1 max-w-xs text-center">Configure parameters and run a backtest to visualize the equity curve</p>
+              <button id="runFromChart" class="btn-primary mt-6 px-6 py-2.5 text-sm hidden sm:block">
+                Run First Backtest
+              </button>
+            </div>
+            
+            <!-- Loading overlay -->
+            <div id="chartLoading" class="absolute inset-0 flex flex-col items-center justify-center bg-neutral-950/50 rounded-lg hidden">
+              <div class="w-10 h-10 border-3 border-neutral-700 border-t-emerald-400 rounded-full animate-spin"></div>
+              <p class="text-sm text-neutral-400 mt-3 font-medium">Running backtest...</p>
+              <p class="text-xs text-neutral-600 font-mono">Processing 100 bars</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Trade Log Preview (Collapsible) -->
+        <section class="metric-card rounded-xl overflow-hidden">
+          <button 
+            id="toggleTradeLog" 
+            class="w-full px-5 py-4 flex items-center justify-between hover:bg-neutral-900/50 transition-colors"
+            aria-expanded="false"
+            aria-controls="tradeLogContent"
+          >
+            <span class="text-sm font-semibold text-neutral-300 uppercase tracking-wider flex items-center gap-2">
+              <svg class="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+              </svg>
+              Trade Log
+            </span>
+            <svg id="tradeLogIcon" class="w-5 h-5 text-neutral-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+          <div id="tradeLogContent" class="hidden" role="region" aria-label="Trade log details">
+            <div class="px-5 pb-5 border-t border-neutral-800">
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm" role="table">
+                  <thead>
+                    <tr class="text-left text-xs font-medium text-neutral-500 uppercase tracking-wider border-b border-neutral-800">
+                      <th class="pb-3 px-2 font-mono">#</th>
+                      <th class="pb-3 px-2">Time</th>
+                      <th class="pb-3 px-2">Side</th>
+                      <th class="pb-3 px-2 font-mono">Entry</th>
+                      <th class="pb-3 px-2 font-mono">Exit</th>
+                      <th class="pb-3 px-2 font-mono">P&L</th>
+                      <th class="pb-3 px-2 font-mono">Return</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tradeLogBody" class="text-neutral-400">
+                    <tr class="hover:bg-neutral-900/50">
+                      <td colspan="7" class="py-8 text-center text-neutral-600">Run a backtest to see trade history</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Toast Container -->
+  <div id="toastContainer" class="fixed bottom-6 right-6 z-[100] flex flex-col gap-2 pointer-events-none" aria-live="polite"></div>
+
+  <!-- Footer -->
+  <footer class="border-t border-neutral-800 mt-10">
+    <div class="max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-neutral-600">
+        <p class="font-mono">AlphaForge v1.0.0-alpha</p>
+        <div class="flex items-center gap-4">
+          <span>Built for quantitative research</span>
+          <a href="https://github.com/jiyapatel-coder" target="_blank" rel="noopener" class="hover:text-emerald-400 transition-colors flex items-center gap-1">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+            GitHub
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
