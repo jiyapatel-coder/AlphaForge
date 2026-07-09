@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <style>
     :root {
       --bg-primary: #0a0e14;
@@ -455,7 +456,7 @@
             <div id="chartLoading" class="absolute inset-0 flex flex-col items-center justify-center bg-neutral-950/50 rounded-lg hidden">
               <div class="w-10 h-10 border-3 border-neutral-700 border-t-emerald-400 rounded-full animate-spin"></div>
               <p class="text-sm text-neutral-400 mt-3 font-medium">Running backtest...</p>
-              <p class="text-xs text-neutral-600 font-mono">Processing 100 bars</p>
+              <p class="text-xs text-neutral-600 font-mono">Processing <span id="barCount">500</span> bars</p>
             </div>
           </div>
         </section>
@@ -525,9 +526,6 @@
       </div>
     </div>
   </footer>
-
-  <!-- Toast Notification Container -->
-  <div id="toastContainer" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>
